@@ -36,4 +36,7 @@
     <!-- Whether to spoof device as pixel for certain google apps, to
          unlock pixel-exclusive features -->
     <bool name="config_spoofGoogleApps">true</bool>
+
+    <!-- Whether to cancel fingerprint operation if not idle -->
+    <bool name="config_fpCancelIfNotIdle">false</bool>
 </resources>
