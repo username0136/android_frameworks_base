@@ -415,9 +415,7 @@ static jlong ImageWriter_init(JNIEnv* env, jobject thiz, jobject weakThiz, jobje
 
     // Get the dimension and format of the producer.
     sp<ANativeWindow> anw = producer;
-    int32_t width, height, surfaceHalFormat;
-    int32_t surfaceFormat = 0;
-    int32_t surfaceDataspace = 0;
+    int32_t width, height, surfaceFormat;
     if (userWidth < 0) {
         if ((res = anw->query(anw.get(), NATIVE_WINDOW_WIDTH, &width)) != OK) {
             ALOGE("%s: Query Surface width failed: %s (%d)", __FUNCTION__, strerror(-res), res);
@@ -453,16 +451,9 @@ static jlong ImageWriter_init(JNIEnv* env, jobject thiz, jobject weakThiz, jobje
     // Query surface format if no valid user format is specified, otherwise, override surface format
     // with user format.
     if (useSurfaceImageFormatInfo) {
-        // retrieve hal format
-        if ((res = anw->query(anw.get(), NATIVE_WINDOW_FORMAT, &surfaceHalFormat)) != OK) {
+        if ((res = anw->query(anw.get(), NATIVE_WINDOW_FORMAT, &surfaceFormat)) != OK) {
             ALOGE("%s: Query Surface format failed: %s (%d)", __FUNCTION__, strerror(-res), res);
             jniThrowRuntimeException(env, "Failed to query Surface format");
-            return 0;
-        }
-        if ((res = anw->query(
-                anw.get(), NATIVE_WINDOW_DEFAULT_DATASPACE, &surfaceDataspace)) != OK) {
-            ALOGE("%s: Query Surface dataspace failed: %s (%d)", __FUNCTION__, strerror(-res), res);
-            jniThrowRuntimeException(env, "Failed to query Surface dataspace");
             return 0;
         }
     } else {
@@ -484,22 +475,17 @@ static jlong ImageWriter_init(JNIEnv* env, jobject thiz, jobject weakThiz, jobje
             return 0;
         }
         ctx->setBufferDataSpace(nativeDataspace);
-        surfaceDataspace = dataSpace;
-        surfaceHalFormat = hardwareBufferFormat;
+        surfaceFormat = static_cast<int32_t>(mapHalFormatDataspaceToPublicFormat(
+            hardwareBufferFormat, nativeDataspace));
     }
 
-    ctx->setBufferFormat(surfaceHalFormat);
-    ctx->setBufferDataSpace(static_cast<android_dataspace>(surfaceDataspace));
-
-    // update class.mWriterFormat
-    surfaceFormat = static_cast<int32_t>(mapHalFormatDataspaceToPublicFormat(
-                surfaceHalFormat, static_cast<android_dataspace>(surfaceDataspace)));
+    ctx->setBufferFormat(surfaceFormat);
     env->SetIntField(thiz,
             gImageWriterClassInfo.mWriterFormat, reinterpret_cast<jint>(surfaceFormat));
 
     // ndkUsage == -1 means setUsage in ImageWriter class is not called.
     // skip usage setting if setUsage in ImageWriter is not called and imageformat is opaque.
-    if (!(ndkUsage == -1 && isFormatOpaque(surfaceHalFormat))) {
+    if (!(ndkUsage == -1 && isFormatOpaque(surfaceFormat))) {
         if (ndkUsage == -1) {
             ndkUsage = GRALLOC_USAGE_SW_WRITE_OFTEN;
         }
@@ -823,7 +809,7 @@ static status_t attachAndQeueuGraphicBuffer(JNIEnv* env, JNIImageWriterContext *
 }
 
 static jint ImageWriter_attachAndQueueImage(JNIEnv* env, jobject thiz, jlong nativeCtx,
-        jlong nativeBuffer, jint nativeHalFormat, jlong timestampNs, jint dataSpace,
+        jlong nativeBuffer, jint imageFormat, jlong timestampNs, jint dataSpace,
         jint left, jint top, jint right, jint bottom, jint transform, jint scalingMode) {
     ALOGV("%s", __FUNCTION__);
     JNIImageWriterContext* const ctx = reinterpret_cast<JNIImageWriterContext *>(nativeCtx);
@@ -834,7 +820,7 @@ static jint ImageWriter_attachAndQueueImage(JNIEnv* env, jobject thiz, jlong nat
     }
 
     sp<Surface> surface = ctx->getProducer();
-    if (isFormatOpaque(ctx->getBufferFormat()) != isFormatOpaque(nativeHalFormat)) {
+    if (isFormatOpaque(imageFormat) != isFormatOpaque(ctx->getBufferFormat())) {
         jniThrowException(env, "java/lang/IllegalStateException",
                 "Trying to attach an opaque image into a non-opaque ImageWriter, or vice versa");
         return -1;
@@ -854,8 +840,8 @@ static jint ImageWriter_attachAndQueueImage(JNIEnv* env, jobject thiz, jlong nat
 }
 
 static jint ImageWriter_attachAndQueueGraphicBuffer(JNIEnv* env, jobject thiz, jlong nativeCtx,
-        jobject buffer, jint nativeHalFormat, jlong timestampNs, jint dataSpace,
-        jint left, jint top, jint right, jint bottom, jint transform, jint scalingMode) {
+        jobject buffer, jint format, jlong timestampNs, jint dataSpace, jint left, jint top,
+        jint right, jint bottom, jint transform, jint scalingMode) {
     ALOGV("%s", __FUNCTION__);
     JNIImageWriterContext* const ctx = reinterpret_cast<JNIImageWriterContext *>(nativeCtx);
     if (ctx == NULL || thiz == NULL) {
@@ -865,7 +851,7 @@ static jint ImageWriter_attachAndQueueGraphicBuffer(JNIEnv* env, jobject thiz, j
     }
 
     sp<Surface> surface = ctx->getProducer();
-    if (isFormatOpaque(ctx->getBufferFormat()) != isFormatOpaque(nativeHalFormat)) {
+    if (isFormatOpaque(format) != isFormatOpaque(ctx->getBufferFormat())) {
         jniThrowException(env, "java/lang/IllegalStateException",
                 "Trying to attach an opaque image into a non-opaque ImageWriter, or vice versa");
         return -1;
@@ -1042,32 +1028,32 @@ static void Image_getLockedImage(JNIEnv* env, jobject thiz, LockedImage *image) 
 }
 
 static bool Image_getLockedImageInfo(JNIEnv* env, LockedImage* buffer, int idx,
-        int32_t halFormat, uint8_t **base, uint32_t *size, int *pixelStride, int *rowStride) {
+        int32_t writerFormat, uint8_t **base, uint32_t *size, int *pixelStride, int *rowStride) {
     ALOGV("%s", __FUNCTION__);
 
-    status_t res = getLockedImageInfo(buffer, idx, halFormat, base, size,
+    status_t res = getLockedImageInfo(buffer, idx, writerFormat, base, size,
             pixelStride, rowStride);
     if (res != OK) {
         jniThrowExceptionFmt(env, "java/lang/UnsupportedOperationException",
-                             "Pixel format: 0x%x is unsupported", halFormat);
+                             "Pixel format: 0x%x is unsupported", writerFormat);
         return false;
     }
     return true;
 }
 
 static jobjectArray Image_createSurfacePlanes(JNIEnv* env, jobject thiz,
-        int numPlanes, int writerFormat) {
+        int numPlanes, int writerFormat, int dataSpace) {
     ALOGV("%s: create SurfacePlane array with size %d", __FUNCTION__, numPlanes);
     int rowStride, pixelStride;
     uint8_t *pData;
     uint32_t dataSize;
     jobject byteBuffer;
-    int halFormat = mapPublicFormatToHalFormat(static_cast<PublicFormat>(writerFormat));
 
-    if (isFormatOpaque(halFormat) && numPlanes > 0) {
+    int format = Image_getFormat(env, thiz, dataSpace);
+    if (isFormatOpaque(format) && numPlanes > 0) {
         String8 msg;
         msg.appendFormat("Format 0x%x is opaque, thus not writable, the number of planes (%d)"
-                " must be 0", writerFormat, numPlanes);
+                " must be 0", format, numPlanes);
         jniThrowException(env, "java/lang/IllegalArgumentException", msg.c_str());
         return NULL;
     }
@@ -1079,8 +1065,7 @@ static jobjectArray Image_createSurfacePlanes(JNIEnv* env, jobject thiz,
                 " probably out of memory");
         return NULL;
     }
-
-    if (isFormatOpaque(halFormat)) {
+    if (isFormatOpaque(format)) {
         return surfacePlanes;
     }
 
@@ -1089,8 +1074,10 @@ static jobjectArray Image_createSurfacePlanes(JNIEnv* env, jobject thiz,
     Image_getLockedImage(env, thiz, &lockedImg);
 
     // Create all SurfacePlanes
+    PublicFormat publicWriterFormat = static_cast<PublicFormat>(writerFormat);
+    writerFormat = mapPublicFormatToHalFormat(publicWriterFormat);
     for (int i = 0; i < numPlanes; i++) {
-        if (!Image_getLockedImageInfo(env, &lockedImg, i, halFormat,
+        if (!Image_getLockedImageInfo(env, &lockedImg, i, writerFormat,
                 &pData, &dataSize, &pixelStride, &rowStride)) {
             return NULL;
         }
@@ -1132,7 +1119,7 @@ static JNINativeMethod gImageWriterMethods[] = {
 };
 
 static JNINativeMethod gImageMethods[] = {
-    {"nativeCreatePlanes",      "(II)[Landroid/media/ImageWriter$WriterSurfaceImage$SurfacePlane;",
+    {"nativeCreatePlanes",      "(III)[Landroid/media/ImageWriter$WriterSurfaceImage$SurfacePlane;",
                                                                (void*)Image_createSurfacePlanes },
     {"nativeGetWidth",          "()I",                         (void*)Image_getWidth },
     {"nativeGetHeight",         "()I",                         (void*)Image_getHeight },
