@@ -77,7 +77,15 @@ public class PropImitationHooks {
     private static final String FEATURE_NEXUS_PRELOAD =
             "com.google.android.apps.photos.NEXUS_PRELOAD";
 
-    private static final Map<String, String> sPixelEightProps = Map.of(
+    private static final Map<String, String> sPixelFiveProps = Map.of(
+        "PRODUCT", "barbet",
+        "DEVICE", "barbet",
+        "MANUFACTURER", "Google",
+        "BRAND", "google",
+        "MODEL", "Pixel 5a",
+        "FINGERPRINT", "google/barbet/barbet:14/AP1A.240305.019.A1/11445699:user/release-keys"
+    );
+        private static final Map<String, String> sPixelCircleProps = Map.of(
         "PRODUCT", "husky",
         "DEVICE", "husky",
         "MANUFACTURER", "Google",
@@ -147,14 +155,14 @@ public class PropImitationHooks {
         } else if (!sStockFp.isEmpty() && packageName.equals(PACKAGE_ARCORE)) {
             dlog("Setting stock fingerprint for: " + packageName);
             setPropValue("FINGERPRINT", sStockFp);
-        } else if (sSpoofGapps && (packageName.equals(PACKAGE_AIWALLPAPERS) || packageName.equals(PACKAGE_ASSISTANT) || packageName.equals(PACKAGE_ASI)
-                || packageName.equals(PACKAGE_EMOJIWALLPAPER) || packageName.equals(PACKAGE_GBOARD) || packageName.equals(PACKAGE_LIVEWALLPAPER)
-                || packageName.equals(PACKAGE_PIXELTHEMES) || packageName.equals(PACKAGE_PIXELWALLPAPER) || packageName.equals(PACKAGE_SETUPWIZARD)
-                || packageName.equals(PACKAGE_SMS_ORGANIZER) || packageName.equals(PACKAGE_SUBSCRIPTION_RED) || packageName.equals(PACKAGE_TURBO)
-                || packageName.equals(PACKAGE_VELVET) || packageName.equals(PACKAGE_WALLPAPER) || packageName.equals(PACKAGE_WALLPAPEREFFECTS)
-                || (packageName.equals(PACKAGE_GMS) && processName.equals(PROCESS_GMS_PERSISTENT)))) {
+        } else if (sSpoofGapps && (packageName.equals(PACKAGE_ASSISTANT) || packageName.equals(PACKAGE_ASI)
+                || packageName.equals(PACKAGE_EMOJIWALLPAPER) || packageName.equals(PACKAGE_GBOARD) || packageName.equals(PACKAGE_SETUPWIZARD)
+                || packageName.equals(PACKAGE_SMS_ORGANIZER) || packageName.equals(PACKAGE_SUBSCRIPTION_RED) || packageName.equals(PACKAGE_TURBO) || (packageName.equals(PACKAGE_GMS) && processName.equals(PROCESS_GMS_PERSISTENT)))) {
+            dlog("Spoofing Pixel 5a for: " + packageName + " process: " + processName);
+            sPixelFiveProps.forEach(PropImitationHooks::setPropValue);
+        } else if (sSpoofGapps && (packageName.equals(PACKAGE_AIWALLPAPERS) || packageName.equals(PACKAGE_LIVEWALLPAPER) || packageName.equals(PACKAGE_PIXELTHEMES) || packageName.equals(PACKAGE_PIXELWALLPAPER) || packageName.equals(PACKAGE_WALLPAPER) || packageName.equals(PACKAGE_WALLPAPEREFFECTS)))) {
             dlog("Spoofing Pixel 8 Pro for: " + packageName + " process: " + processName);
-            sPixelEightProps.forEach(PropImitationHooks::setPropValue);
+            sPixelCircleProps.forEach(PropImitationHooks::setPropValue);
         } else if (sIsPhotos) {
             dlog("Spoofing Pixel 1 for Google Photos");
             sPixelOneProps.forEach((PropImitationHooks::setPropValue));
